@@ -64,7 +64,7 @@ void ADS1115_UserConfig_ContinuConver(ADS1115_InitTypeDefine* ADS1115_InitStruct
 	ADS1115_InitStruct->COMP_LAT = ADS1115_COMP_LAT_0;
 	ADS1115_InitStruct->COMP_MODE = ADS1115_COMP_MODE_0;
 	ADS1115_InitStruct->COMP_POL = ADS1115_COMP_POL_0;
-	ADS1115_InitStruct->DataRate = ADS1115_DataRate_475;
+	ADS1115_InitStruct->DataRate = ADS1115_DataRate_860;
 	ADS1115_InitStruct->MODE = ADS1115_MODE_ContinuConver;
 	ADS1115_InitStruct->MUX = ADS1115_MUX_Channel_0;
 	ADS1115_InitStruct->OS = ADS1115_OS_OperationalStatus;
