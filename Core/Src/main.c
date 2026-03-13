@@ -27,25 +27,21 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "ADS1115.h"
+#include "Algorithm.h"
 /* USER CODE END Includes */
-
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-#define FIFO_SIZE 128 // 定义�?个能�? 128 个数据的缓冲�?
-/* USER CODE END PTD */
 
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
+/* USER CODE END PTD */
 struct
 {
   uint32_t Head;
   float Value;
   uint32_t Tail;
-} DebugData = {0};
-
-
-int16_t adc_fifo[FIFO_SIZE];
-uint16_t raw_adc;
+} DebugData = {0}; // uart data package
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+#define BUFFER_SIZE 128
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -56,11 +52,13 @@ uint16_t raw_adc;
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-volatile uint8_t timer_10ms_flag = 0;
-volatile uint16_t fifo_head = 0;
-volatile uint16_t fifo_tail = 0;
-/* USER CODE END PV */
 
+/* USER CODE END PV */
+uint16_t adc_buffer[BUFFER_SIZE];
+uint16_t raw_adc;
+volatile uint8_t timer_10ms_flag = 0;
+volatile uint16_t buffer_head = 0;
+volatile uint16_t buffer_tail = 0;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
@@ -73,9 +71,9 @@ void SystemClock_Config(void);
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
+ * @brief  The application entry point.
+ * @retval int
+ */
 int main(void)
 {
 
@@ -107,8 +105,8 @@ int main(void)
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   ADS1115_Init();
-  //ADS1115_UserConfig_SingleConver(&ADS1115_ADDR_GND, 0x90);
-	ADS1115_UserConfig_ContinuConver(&ADS1115_ADDR_GND, ADS1115_ADDRESS_GND);
+  // ADS1115_UserConfig_SingleConver(&ADS1115_ADDR_GND, 0x90);
+  ADS1115_UserConfig_ContinuConver(&ADS1115_ADDR_GND, ADS1115_ADDRESS_GND);
   DebugData.Head = 0x11AA22BB;
   DebugData.Tail = 0x33CC44DD;
   HAL_TIM_Base_Start_IT(&htim2);
@@ -121,31 +119,33 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    // 把你原来�? if(timer_10ms_flag == 1) 的�?�辑改成这样�?
 
     if (timer_10ms_flag == 1)
     {
       timer_10ms_flag = 0;
-
       uint32_t sum = 0;
       uint16_t count = 0;
 
-      // 1. 把过�? 10ms 攒在 FIFO 里的数据全部拿出来求�?
-      while (fifo_tail != fifo_head)
+      // 1. 从 FIFO 中提取并进行分块均值（降采样到 100Hz）
+      while (buffer_tail != buffer_head)
       {
-        sum += adc_fifo[fifo_tail];
-        fifo_tail = (fifo_tail + 1) % 128;
+        sum += adc_buffer[buffer_tail];
+        buffer_tail = (buffer_tail + 1) % BUFFER_SIZE; // 记得这里用 BUFFER_SIZE 宏
         count++;
       }
 
-      // 2. 如果有数据，求平均�?�并发�??
       if (count > 0)
       {
+        // 2. 得到初步的 100Hz 数据  
         float average_val = (float)sum / count;
 
+        // 3. 核心联动：送入 Algorithm.c 进行深度平滑处理！
+        float final_val = Smooth_Filter(average_val);
+
+        // 4. 发送给 VOFA+
         if (HAL_UART_GetState(&huart2) == HAL_UART_STATE_READY)
         {
-          DebugData.Value = average_val; // 发�?�平滑后的均�?
+          DebugData.Value = final_val; // 发送最终处理后的丝滑数据
           HAL_UART_Transmit_DMA(&huart2, (uint8_t *)&DebugData, sizeof(DebugData));
         }
       }
@@ -155,17 +155,17 @@ int main(void)
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
+ * @brief System Clock Configuration
+ * @retval None
+ */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
   /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
+   * in the RCC_OscInitTypeDef structure.
+   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
@@ -179,9 +179,8 @@ void SystemClock_Config(void)
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+   */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
@@ -203,21 +202,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 }
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  
+
   if (GPIO_Pin == GPIO_PIN_0)
   {
-    ADS1115_ReadRawData(&ADS1115_ADDR_GND);    
+    ADS1115_ReadRawData(&ADS1115_ADDR_GND);
     raw_adc = ADS1115_ADDR_GND.ADS1115_RawData[0];
-    adc_fifo[fifo_head] = raw_adc;
-    fifo_head = (fifo_head + 1) % 128;
+    adc_buffer[buffer_head] = raw_adc;
+    buffer_head = (buffer_head + 1) % 128;
   }
 }
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
@@ -229,14 +228,14 @@ void Error_Handler(void)
   /* USER CODE END Error_Handler_Debug */
 }
 
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */

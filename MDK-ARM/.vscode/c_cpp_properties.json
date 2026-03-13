@@ -9,6 +9,7 @@
                 "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Drivers\\CMSIS\\Device\\ST\\STM32F1xx\\Include",
                 "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Drivers\\CMSIS\\Include",
                 "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Devices",
+                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Algorithm",
                 "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\MDK-ARM",
                 "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Core\\Src",
                 "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Drivers\\STM32F1xx_HAL_Driver\\Src"
