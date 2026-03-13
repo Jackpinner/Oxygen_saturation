@@ -69,10 +69,26 @@ void ADS1115_UserConfig_ContinuConver(ADS1115_InitTypeDefine* ADS1115_InitStruct
 	ADS1115_InitStruct->MUX = ADS1115_MUX_Channel_0;
 	ADS1115_InitStruct->OS = ADS1115_OS_OperationalStatus;
 	ADS1115_InitStruct->PGA = ADS1115_PGA_4096;
-	
+	ADS1115_InitStruct->ADDRESS = ADDRESS;
+	ADS1115_InitStruct->CHANNEL = ADS1115_CHANNEL0;
+	ADS1115_InitStruct->COMP_QUE = ADS1115_COMP_QUE_0;
 	ADS1115_Config(ADS1115_InitStruct);
-	
+	uint8_t threshold_cmd[3];
+    
+    // 1. 设置高阈值寄存器 (0x03) 为 0x8000
+    threshold_cmd[0] = ADS1115_Pointer_HiThreshReg; 
+    threshold_cmd[1] = 0x80;
+    threshold_cmd[2] = 0x00;
+    HAL_I2C_Master_Transmit(&hi2c1, ADS1115_InitStruct->ADDRESS, threshold_cmd, 3, 100);
+
+    // 2. 设置低阈值寄存器 (0x02) 为 0x0000
+    threshold_cmd[0] = ADS1115_Pointer_LoThreshReg; 
+    threshold_cmd[1] = 0x00;
+    threshold_cmd[2] = 0x00;
+    HAL_I2C_Master_Transmit(&hi2c1, ADS1115_InitStruct->ADDRESS, threshold_cmd, 3, 100);
 }
+	
+
 
 
 /**
@@ -110,7 +126,7 @@ void ADS1115_Config(ADS1115_InitTypeDefine *ADS1115_InitStruct)
 void ADS1115_ReadRawData(ADS1115_InitTypeDefine *ADS1115_InitStruct)
 {
 	unsigned char Result[2];
-	uint8_t Writebuff[1];
+	uint8_t Writebuff[1];	
 	Writebuff[0] = ADS1115_Pointer_ConverReg;
 	
 	HAL_I2C_Master_Transmit(&hi2c1, ADS1115_InitStruct->ADDRESS, Writebuff, 1, 100);

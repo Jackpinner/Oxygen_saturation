@@ -31,7 +31,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+#define FIFO_SIZE 128 // 定义�?个能�? 128 个数据的缓冲�?
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -39,10 +39,13 @@
 struct
 {
   uint32_t Head;
-  float Value[3];
+  float Value;
   uint32_t Tail;
 } DebugData = {0};
-float Value;
+
+
+int16_t adc_fifo[FIFO_SIZE];
+uint16_t raw_adc;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -54,7 +57,8 @@ float Value;
 
 /* USER CODE BEGIN PV */
 volatile uint8_t timer_10ms_flag = 0;
-static uint8_t step = 0; // 状态机步骤：0测红外，1测红光，2测底噪
+volatile uint16_t fifo_head = 0;
+volatile uint16_t fifo_tail = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -103,7 +107,8 @@ int main(void)
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   ADS1115_Init();
-  ADS1115_UserConfig_SingleConver(&ADS1115_ADDR_GND, 0x90);
+  //ADS1115_UserConfig_SingleConver(&ADS1115_ADDR_GND, 0x90);
+	ADS1115_UserConfig_ContinuConver(&ADS1115_ADDR_GND, ADS1115_ADDRESS_GND);
   DebugData.Head = 0x11AA22BB;
   DebugData.Tail = 0x33CC44DD;
   HAL_TIM_Base_Start_IT(&htim2);
@@ -116,41 +121,35 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    // 把你原来�? if(timer_10ms_flag == 1) 的�?�辑改成这样�?
 
-    
     if (timer_10ms_flag == 1)
-{
-    timer_10ms_flag = 0; 
-    
-    // === 动作 1：测 940nm ===
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);  
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET); 
-    ADS1115_Config(&ADS1115_ADDR_GND);
-    HAL_Delay(2); 
-    ADS1115_GetVoltage(&ADS1115_ADDR_GND);
-    DebugData.Value[0] = ADS1115_ADDR_GND.ADS1115_Vol[0];
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET); 
+    {
+      timer_10ms_flag = 0;
 
-    // === 动作 2：测 660nm ===
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);   
-    ADS1115_Config(&ADS1115_ADDR_GND);
-    HAL_Delay(2); 
-    ADS1115_GetVoltage(&ADS1115_ADDR_GND);
-    DebugData.Value[1] = ADS1115_ADDR_GND.ADS1115_Vol[0];
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET); 
-    
-    // === 动作 3：测全暗底噪 ===
-    ADS1115_Config(&ADS1115_ADDR_GND);
-    HAL_Delay(2); 
-    ADS1115_GetVoltage(&ADS1115_ADDR_GND);
-    DebugData.Value[2] = ADS1115_ADDR_GND.ADS1115_Vol[0];
-    
-   
-    HAL_UART_Transmit_DMA(&huart2, (uint8_t *)&DebugData, sizeof(DebugData));
-}
-    
-    
-    
+      uint32_t sum = 0;
+      uint16_t count = 0;
+
+      // 1. 把过�? 10ms 攒在 FIFO 里的数据全部拿出来求�?
+      while (fifo_tail != fifo_head)
+      {
+        sum += adc_fifo[fifo_tail];
+        fifo_tail = (fifo_tail + 1) % 128;
+        count++;
+      }
+
+      // 2. 如果有数据，求平均�?�并发�??
+      if (count > 0)
+      {
+        float average_val = (float)sum / count;
+
+        if (HAL_UART_GetState(&huart2) == HAL_UART_STATE_READY)
+        {
+          DebugData.Value = average_val; // 发�?�平滑后的均�?
+          HAL_UART_Transmit_DMA(&huart2, (uint8_t *)&DebugData, sizeof(DebugData));
+        }
+      }
+    }
   }
   /* USER CODE END 3 */
 }
@@ -200,6 +199,17 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   if (htim->Instance == htim2.Instance)
   {
     timer_10ms_flag = 1;
+  }
+}
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  
+  if (GPIO_Pin == GPIO_PIN_0)
+  {
+    ADS1115_ReadRawData(&ADS1115_ADDR_GND);    
+    raw_adc = ADS1115_ADDR_GND.ADS1115_RawData[0];
+    adc_fifo[fifo_head] = raw_adc;
+    fifo_head = (fifo_head + 1) % 128;
   }
 }
 /* USER CODE END 4 */
