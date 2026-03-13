@@ -36,7 +36,7 @@
 struct
 {
   uint32_t Head;
-  float Value;
+  float Value[2];
   uint32_t Tail;
 } DebugData = {0}; // uart data package
 /* Private define ------------------------------------------------------------*/
@@ -59,6 +59,7 @@ uint16_t raw_adc;
 volatile uint8_t timer_10ms_flag = 0;
 volatile uint16_t buffer_head = 0;
 volatile uint16_t buffer_tail = 0;
+int32_t current_bpm = 0;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
@@ -126,26 +127,25 @@ int main(void)
       uint32_t sum = 0;
       uint16_t count = 0;
 
-      // 1. 从 FIFO 中提取并进行分块均值（降采样到 100Hz）
+      // 1. 中断降频：100Hz 提取
       while (buffer_tail != buffer_head)
       {
         sum += adc_buffer[buffer_tail];
-        buffer_tail = (buffer_tail + 1) % BUFFER_SIZE; // 记得这里用 BUFFER_SIZE 宏
+        buffer_tail = (buffer_tail + 1) % BUFFER_SIZE;
         count++;
       }
 
       if (count > 0)
       {
-        // 2. 得到初步的 100Hz 数据  
         float average_val = (float)sum / count;
-
-        // 3. 核心联动：送入 Algorithm.c 进行深度平滑处理！
         float final_val = Smooth_Filter(average_val);
-
-        // 4. 发送给 VOFA+
+        if (Get_Heart_Rate(final_val, &current_bpm) == 1)
+        {
+          DebugData.Value[1] = current_bpm;
+        }
         if (HAL_UART_GetState(&huart2) == HAL_UART_STATE_READY)
         {
-          DebugData.Value = final_val; // 发送最终处理后的丝滑数据
+          DebugData.Value[0] = final_val;
           HAL_UART_Transmit_DMA(&huart2, (uint8_t *)&DebugData, sizeof(DebugData));
         }
       }

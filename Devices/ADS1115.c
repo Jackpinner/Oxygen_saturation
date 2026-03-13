@@ -2,7 +2,6 @@
 
 //#ifdef ADS1115
 
-
 ADS1115_InitTypeDefine ADS1115_ADDR_GND;
 ADS1115_InitTypeDefine ADS1115_ADDR_VDD;
 float ADS1115_CHn_Vol[4];

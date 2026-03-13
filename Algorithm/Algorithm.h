@@ -2,8 +2,10 @@
 #define ALGORITHM_H_
 #include "main.h"
 
-#define FILTER_WINDOW_SIZE 12  // 滤波窗口大小（建议范围 8 ~ 20，越大越平滑，但波形会有少许延迟）
-
+#define PPG_SAMPLE_RATE 100  // 中层送入算法的频率 (100Hz)
+#define PPG_BUFFER_SIZE 400  // 寻峰窗口大小：400点 = 4秒数据
+#define UPDATE_INTERVAL 100  // 刷新间隔：每100个点(1秒)计算并刷新一次心率
 float Smooth_Filter(float input_data);
+uint8_t Get_Heart_Rate(float new_sample, int32_t *bpm);
 
 #endif /* ALGORITHM_H_ */
