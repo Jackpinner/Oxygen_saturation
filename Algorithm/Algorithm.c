@@ -1,6 +1,10 @@
 #include "Algorithm.h"
 #define FILTER_WINDOW_SIZE 10
 
+static int32_t ppg_buffer[PPG_BUFFER_SIZE];
+static uint16_t ppg_idx = 0;
+static uint8_t is_buffer_filled = 0; // 记录开机是否已经攒满过4秒
+
 /**
  * @brief  脉搏波平滑滤波器 (滑动窗口平均法)
  * @param  input_data: 经过初步降采样的波形数据
@@ -29,9 +33,71 @@ float Smooth_Filter(float input_data)
     return sum / FILTER_WINDOW_SIZE;
 }
 
-static int32_t ppg_buffer[PPG_BUFFER_SIZE];
-static uint16_t ppg_idx = 0;
-static uint8_t is_buffer_filled = 0; // 记录开机是否已经攒满过4秒
+/**
+ * @brief  实时波峰/波谷状态机检测 (适用于 100Hz 采样率)
+ * @param  new_sample  最新输入的一个平滑波形点
+ * @param  is_peak     输出参数：如果确认为波峰，输出 1
+ * @param  is_valley   输出参数：如果确认为波谷，输出 1
+ * @param  bpm         输出参数：计算出的实时心率
+ */
+void Track_Pulse_Wave(float new_sample, uint8_t *is_peak, uint8_t *is_valley, int32_t *bpm)
+{
+    static float max_v = 0.0f;            // 追踪局部最高点
+    static float min_v = 99999.0f;        // 追踪局部最低点
+    static uint8_t state = 1;             // 1: 正在寻找波峰, 0: 正在寻找波谷
+    static float amplitude = 100.0f;      // 动态脉搏波幅值 (AC)
+    static uint32_t time_tick = 0;        // 绝对时间轴 (每次进入代表 10ms)
+    static uint32_t last_peak_tick = 0;   // 上一次波峰的时间
+
+    *is_peak = 0;
+    *is_valley = 0;
+    time_tick++;
+
+    // 实时追踪极值
+    if (new_sample > max_v) max_v = new_sample;
+    if (new_sample < min_v) min_v = new_sample;
+
+    // =============== 寻找波峰状态 ===============
+    if (state == 1) 
+    {
+        // 确认波峰条件：当前值从最高点回落了幅值的 20%
+        // (20% 是个神仙参数，能完美避开重搏波的干扰)
+        if (new_sample < max_v - amplitude * 0.2f) 
+        {
+            *is_peak = 1;         // 确认产生波峰！
+            state = 0;            // 状态机切换：开始寻找波谷
+            min_v = new_sample;   // 重置最低点追踪器
+
+            // 计算 BPM
+            if (last_peak_tick > 0) 
+            {
+                uint32_t interval = time_tick - last_peak_tick; // 两次波峰间隔的点数
+                if (interval > 30 && interval < 200) // 限制心率在 30~200 BPM 之间
+                {
+                    *bpm = (100 * 60) / interval; // 100Hz 采样率下的心率公式
+                }
+            }
+            last_peak_tick = time_tick;
+        }
+    }
+    // =============== 寻找波谷状态 ===============
+    else 
+    {
+        // 确认波谷条件：当前值从最低点反弹了幅值的 20%
+        if (new_sample > min_v + amplitude * 0.2f) 
+        {
+            *is_valley = 1;       // 确认产生波谷！
+            state = 1;            // 状态机切换：开始寻找波峰
+            
+            // 【极其关键】计算当前周期的交流幅值 AC，为后续血氧算法做准备！
+            amplitude = max_v - min_v;
+            if (amplitude < 20.0f) amplitude = 20.0f;   // 兜底：防止平滑基线时幅值过小
+            if (amplitude > 2000.0f) amplitude = 2000.0f; // 兜底：防止运动伪影导致幅值过大
+
+            max_v = new_sample;   // 重置最高点追踪器
+        }
+    }
+}
 
 /**
  * @brief  输入一个点，如果凑够了刷新周期，就算出最新心率
@@ -134,3 +200,4 @@ uint8_t Get_Heart_Rate(float new_sample, int32_t *bpm)
     }
 
     return 0;
+}

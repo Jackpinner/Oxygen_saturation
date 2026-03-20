@@ -36,7 +36,7 @@
 struct
 {
   uint32_t Head;
-  float Value[2];
+  float Value[3];
   uint32_t Tail;
 } DebugData = {0}; // uart data package
 /* Private define ------------------------------------------------------------*/
@@ -111,6 +111,7 @@ int main(void)
   DebugData.Head = 0x11AA22BB;
   DebugData.Tail = 0x33CC44DD;
   HAL_TIM_Base_Start_IT(&htim2);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);//pin1 940 pin0 660
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -127,7 +128,7 @@ int main(void)
       uint32_t sum = 0;
       uint16_t count = 0;
 
-      // 1. 中断降频：100Hz 提取
+      // 1. 从底层 FIFO 提取数据并求均值 (降频到 100Hz)
       while (buffer_tail != buffer_head)
       {
         sum += adc_buffer[buffer_tail];
@@ -138,20 +139,43 @@ int main(void)
       if (count > 0)
       {
         float average_val = (float)sum / count;
+
+        // 2. 丝滑滤波
         float final_val = Smooth_Filter(average_val);
-        if (Get_Heart_Rate(final_val, &current_bpm) == 1)
-        {
-          DebugData.Value[1] = current_bpm;
-        }
+
+        // 3. 实时寻峰状态机
+        uint8_t is_peak = 0, is_valley = 0;
+        Track_Pulse_Wave(final_val, &is_peak, &is_valley, &current_bpm);
+
         if (HAL_UART_GetState(&huart2) == HAL_UART_STATE_READY)
         {
+          // 通道 0: 原始平滑波形
           DebugData.Value[0] = final_val;
+
+          // 通道 1: 【标记通道】 - 极其直观的视觉反馈
+          if (is_peak == 1)
+          {
+            DebugData.Value[1] = final_val + 200.0f; // 确认为波峰时，向上打一根 200 高度的针
+          }
+          else if (is_valley == 1)
+          {
+            DebugData.Value[1] = final_val - 200.0f; // 确认为波谷时，向下打一根 200 深度的针
+          }
+          else
+          {
+            //DebugData.Value[1] = final_val; // 平时隐藏在原波形中
+            DebugData.Value[1] = 0.0f; // 平时保持为0，只有在波峰/波谷时才出现明显的标记
+          }
+
+          // 通道 2: 实时心率
+          DebugData.Value[2] = (float)current_bpm;
+
           HAL_UART_Transmit_DMA(&huart2, (uint8_t *)&DebugData, sizeof(DebugData));
         }
       }
     }
+    /* USER CODE END 3 */
   }
-  /* USER CODE END 3 */
 }
 
 /**
