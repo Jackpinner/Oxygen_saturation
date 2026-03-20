@@ -8,5 +8,6 @@
 float Smooth_Filter(float input_data);
 //uint8_t Get_Heart_Rate(float new_sample, int32_t *bpm);
 void Track_Pulse_Wave(float new_sample, uint8_t *is_peak, uint8_t *is_valley, int32_t *bpm);
-
+float Smooth_Filter_IR(float input_data);
+float Smooth_Filter_Red(float input_data);
 #endif /* ALGORITHM_H_ */

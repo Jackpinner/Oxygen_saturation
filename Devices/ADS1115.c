@@ -54,7 +54,56 @@ void ADS1115_UserConfig_SingleConver(ADS1115_InitTypeDefine* ADS1115_InitStruct,
 	
 }
 
+/**
+ * @brief 带 RDY 中断的单次转换配置 (Ping-Pong 专用)
+ */
+void ADS1115_UserConfig_SingleConver_Interrupt(ADS1115_InitTypeDefine* ADS1115_InitStruct, ADS1115_ADDRESS ADDRESS)
+{
+    ADS1115_InitStruct->COMP_LAT = ADS1115_COMP_LAT_0;
+    ADS1115_InitStruct->COMP_MODE = ADS1115_COMP_MODE_0;
+    ADS1115_InitStruct->COMP_POL = ADS1115_COMP_POL_0; // 下降沿触发
+    ADS1115_InitStruct->DataRate = ADS1115_DataRate_860; // 必须是极速 860SPS
+    ADS1115_InitStruct->MODE = ADS1115_MODE_SingleConver; // 单次模式！
+    ADS1115_InitStruct->MUX = ADS1115_MUX_Channel_0;
+    ADS1115_InitStruct->OS = ADS1115_OS_SingleConverStart;
+    ADS1115_InitStruct->PGA = ADS1115_PGA_4096;
+    ADS1115_InitStruct->ADDRESS = ADDRESS;
+    ADS1115_InitStruct->CHANNEL = ADS1115_CHANNEL0;
+    ADS1115_InitStruct->COMP_QUE = ADS1115_COMP_QUE_0; // 关键：转换1次后拉低 RDY 引脚
 
+    ADS1115_Config(ADS1115_InitStruct);
+    
+    // 写入高低阈值开启 RDY 功能
+    uint8_t threshold_cmd[3];
+    threshold_cmd[0] = ADS1115_Pointer_HiThreshReg; 
+    threshold_cmd[1] = 0x80;
+    threshold_cmd[2] = 0x00;
+    HAL_I2C_Master_Transmit(&hi2c1, ADS1115_InitStruct->ADDRESS, threshold_cmd, 3, 100);
+
+    threshold_cmd[0] = ADS1115_Pointer_LoThreshReg; 
+    threshold_cmd[1] = 0x00;
+    threshold_cmd[2] = 0x00;
+    HAL_I2C_Master_Transmit(&hi2c1, ADS1115_InitStruct->ADDRESS, threshold_cmd, 3, 100);
+}
+
+/**
+ * @brief 极速触发下一次转换 (无需重新配置，直接修改 OS 位)
+ */
+void ADS1115_Trigger_Next_Conversion(ADS1115_InitTypeDefine *ADS1115_InitStruct)
+{
+    uint16_t Config = ADS1115_InitStruct->OS + ADS1115_InitStruct->MUX + ADS1115_InitStruct->PGA + ADS1115_InitStruct->MODE
+                    + ADS1115_InitStruct->DataRate + ADS1115_InitStruct->COMP_MODE + ADS1115_InitStruct->COMP_POL
+                    + ADS1115_InitStruct->COMP_LAT + ADS1115_InitStruct->COMP_QUE;
+    
+    // 强行将最高位 (OS位) 置为 1，告诉 ADC 马上开始下一次转换
+    Config |= 0x8000;
+
+    uint8_t Writebuff[3];
+    Writebuff[0] = ADS1115_Pointer_ConfigReg;
+    Writebuff[1] = (unsigned char) ((Config >> 8) & 0xFF);
+    Writebuff[2] = (unsigned char) (Config & 0xFF);
+    HAL_I2C_Master_Transmit(&hi2c1, ADS1115_InitStruct->ADDRESS, Writebuff, 3, 100);
+}
 /**
  * @brief Configuration of ADS1115, continuous conversion
  */

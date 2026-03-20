@@ -122,6 +122,10 @@ typedef struct
 //extern float ADS1115_CHn_Vol[4];
 void ADS1115_Init(void);
 void ADS1115_UserConfig_SingleConver(ADS1115_InitTypeDefine* hADS1115 , ADS1115_ADDRESS ADDRESS);
+
+void ADS1115_UserConfig_SingleConver_Interrupt(ADS1115_InitTypeDefine* ADS1115_InitStruct, ADS1115_ADDRESS ADDRESS);//带中断
+void ADS1115_Trigger_Next_Conversion(ADS1115_InitTypeDefine *ADS1115_InitStruct);
+
 void ADS1115_UserConfig_ContinuConver(ADS1115_InitTypeDefine* ADS1115_InitStruct,ADS1115_ADDRESS ADDRESS);
 void ADS1115_Config(ADS1115_InitTypeDefine* ADS1115_InitStruct);
 
