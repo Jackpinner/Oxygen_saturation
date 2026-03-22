@@ -3,16 +3,16 @@
         {
             "name": "Oxygen_saturation_stm32",
             "includePath": [
-                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Core\\Inc",
-                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Drivers\\STM32F1xx_HAL_Driver\\Inc",
-                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Drivers\\STM32F1xx_HAL_Driver\\Inc\\Legacy",
-                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Drivers\\CMSIS\\Device\\ST\\STM32F1xx\\Include",
-                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Drivers\\CMSIS\\Include",
-                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Devices",
-                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Algorithm",
-                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\MDK-ARM",
-                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Core\\Src",
-                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32\\Drivers\\STM32F1xx_HAL_Driver\\Src"
+                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32_dual\\Oxygen_saturation\\Core\\Inc",
+                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32_dual\\Oxygen_saturation\\Drivers\\STM32F1xx_HAL_Driver\\Inc",
+                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32_dual\\Oxygen_saturation\\Drivers\\STM32F1xx_HAL_Driver\\Inc\\Legacy",
+                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32_dual\\Oxygen_saturation\\Drivers\\CMSIS\\Device\\ST\\STM32F1xx\\Include",
+                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32_dual\\Oxygen_saturation\\Drivers\\CMSIS\\Include",
+                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32_dual\\Oxygen_saturation\\Devices",
+                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32_dual\\Oxygen_saturation\\Algorithm",
+                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32_dual\\Oxygen_saturation\\MDK-ARM",
+                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32_dual\\Oxygen_saturation\\Core\\Src",
+                "d:\\DeskTop\\Pulsewave_project\\stm32_pulsesensor\\Oxygen_saturation_stm32_dual\\Oxygen_saturation\\Drivers\\STM32F1xx_HAL_Driver\\Src"
             ],
             "defines": [
                 "USE_HAL_DRIVER",
