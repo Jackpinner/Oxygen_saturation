@@ -7,7 +7,7 @@
 #define UPDATE_INTERVAL 100  // 刷新间隔：每100个点(1秒)计算并刷新一次心率
 float Smooth_Filter(float input_data);
 //uint8_t Get_Heart_Rate(float new_sample, int32_t *bpm);
-void Track_Pulse_Wave(float new_sample, uint8_t *is_peak, uint8_t *is_valley, int32_t *bpm);
+void Track_Pulse_Wave_Dual(float ir_sample, float red_sample, uint8_t *is_peak, uint8_t *is_valley, int32_t *bpm, float *spo2);
 float Smooth_Filter_IR(float input_data);
 float Smooth_Filter_Red(float input_data);
 #endif /* ALGORITHM_H_ */

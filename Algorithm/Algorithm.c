@@ -44,18 +44,26 @@ float Smooth_Filter_Red(float input_data)
 }
 
 /**
- * @brief  实时波峰/波谷状态机检测 (带有抗重搏波“不应期”机制)
- * @param  new_sample  最新输入的一个平滑波形点
- * @param  is_peak     输出参数：如果确认为波峰，输出 1
- * @param  is_valley   输出参数：如果确认为波谷，输出 1
- * @param  bpm         输出参数：计算出的实时心率
+ * @brief  终极双光路状态机：同时计算心率 (BPM) 和血氧 (SpO2)
+ * @param  ir_sample   最新输入的红外光平滑数据
+ * @param  red_sample  最新输入的红光平滑数据
+ * @param  is_peak     输出：波峰标志
+ * @param  is_valley   输出：波谷标志
+ * @param  bpm         输出：实时心率
+ * @param  spo2        输出：实时血氧饱和度 (百分比)
  */
-void Track_Pulse_Wave(float new_sample, uint8_t *is_peak, uint8_t *is_valley, int32_t *bpm)
+void Track_Pulse_Wave_Dual(float ir_sample, float red_sample, uint8_t *is_peak, uint8_t *is_valley, int32_t *bpm, float *spo2)
 {
-    static float max_v = 0.0f;            
-    static float min_v = 99999.0f;        
+    // IR 光的极值追踪
+    static float ir_max = 0.0f;            
+    static float ir_min = 99999.0f;        
+    
+    // Red 光的极值追踪
+    static float red_max = 0.0f;
+    static float red_min = 99999.0f;
+
     static uint8_t state = 1;             // 1: 寻找波峰, 0: 寻找波谷
-    static float amplitude = 500.0f;      // 初始脉搏波幅值估算加大，防止初始误判
+    static float ir_amplitude = 500.0f;   // IR 的动态幅值
     static uint32_t time_tick = 0;        
     static uint32_t last_peak_tick = 0;   
 
@@ -63,26 +71,30 @@ void Track_Pulse_Wave(float new_sample, uint8_t *is_peak, uint8_t *is_valley, in
     *is_valley = 0;
     time_tick++;
 
-    // 实时追踪极值
-    if (new_sample > max_v) max_v = new_sample;
-    if (new_sample < min_v) min_v = new_sample;
+    // 实时追踪两条光路的最高点和最低点
+    if (ir_sample > ir_max) ir_max = ir_sample;
+    if (ir_sample < ir_min) ir_min = ir_sample;
+    
+    if (red_sample > red_max) red_max = red_sample;
+    if (red_sample < red_min) red_min = red_sample;
 
     // =============== 寻找波峰状态 ===============
+    // 【规则】：永远以 IR 光为基准来判断波峰，因为 IR 穿透力强，波形最稳
     if (state == 1) 
     {
-        // 确认波峰条件 1：回落超过幅值的 20%
-        // 确认波峰条件 2：【不应期保护】距离上一个波峰至少过了 50 个点 (即 500ms, 对应最大心率 120 BPM)
-        if ((new_sample < max_v - amplitude * 0.2f) && ((time_tick - last_peak_tick) > 50)) 
+        if ((ir_sample < ir_max - ir_amplitude * 0.2f) && ((time_tick - last_peak_tick) > 30)) 
         {
             *is_peak = 1;         
-            state = 0;            // 切换为寻找波谷
-            min_v = new_sample;   // 重置最低点追踪器
+            state = 0;            
+            
+            // 重置所有最低点追踪器，准备迎接下坡
+            ir_min = ir_sample;   
+            red_min = red_sample;
 
             // 计算 BPM
             if (last_peak_tick > 0) 
             {
                 uint32_t interval = time_tick - last_peak_tick; 
-                // 限制合法心率在 40 ~ 180 BPM 之间，太离谱的直接过滤
                 if (interval > 33 && interval < 150) 
                 {
                     *bpm = (100 * 60) / interval; 
@@ -91,29 +103,49 @@ void Track_Pulse_Wave(float new_sample, uint8_t *is_peak, uint8_t *is_valley, in
             last_peak_tick = time_tick;
         }
     }
-    // =============== 寻找波谷状态 ===============
+    // =============== 寻找波谷状态 (结算血氧的绝佳时机！) ===============
     else 
     {
-        // 确认波谷条件 1：反弹超过幅值的 20%
-        // 确认波谷条件 2：【不应期保护】防止把半山腰的重搏波当成真波谷，距离上次波峰至少过 15 个点
-        if ((new_sample > min_v + amplitude * 0.2f) && ((time_tick - last_peak_tick) > 15)) 
+        if ((ir_sample > ir_min + ir_amplitude * 0.2f) && ((time_tick - last_peak_tick) > 15)) 
         {
             *is_valley = 1;       
-            state = 1;            // 切换为寻找波峰
+            state = 1;            
             
-            // 计算当前周期的交流幅值 AC
-            amplitude = max_v - min_v;
-            
-            // 【极其关键的底线保护】：根据你图里的 Y 轴数值，波形上下浮动在 1000 左右
-            // 如果幅值太小，说明没放手指或者按太紧了，强制恢复默认大阈值，防止被微小噪声欺骗
-            if (amplitude < 100.0f) amplitude = 500.0f;   
-            if (amplitude > 3000.0f) amplitude = 3000.0f; 
+            // 1. 提取 IR 光的 AC 和 DC
+            float ir_ac = ir_max - ir_min;
+            float ir_dc = ir_min;
+            ir_amplitude = ir_ac; // 更新动态幅值供下一次判断使用
 
-            max_v = new_sample;   // 重置最高点追踪器
+            // 2. 提取 Red 光的 AC 和 DC
+            float red_ac = red_max - red_min;
+            float red_dc = red_min;
+
+            // 3. 【核心计算】血氧 R 值和 SpO2%
+            if (ir_dc > 0 && red_dc > 0 && ir_ac > 0) // 防止除零异常
+            {
+                // R = (AC_red / DC_red) / (AC_ir / DC_ir)
+                float R = (red_ac / red_dc) / (ir_ac / ir_dc);
+                
+                // 使用美信开源库的二次拟合经验公式 (你之前发给我的代码里就是这个)
+                float current_spo2 = -45.06f * R * R + 30.354f * R + 94.845f;
+                
+                // 上下限硬约束
+                if (current_spo2 > 100.0f) current_spo2 = 100.0f;
+                if (current_spo2 < 50.0f) current_spo2 = 0.0f; // 算出来太低说明波形不准，直接置零
+                
+                *spo2 = current_spo2;
+            }
+
+            // 底线保护
+            if (ir_amplitude < 100.0f) ir_amplitude = 500.0f;   
+            if (ir_amplitude > 3000.0f) ir_amplitude = 3000.0f; 
+
+            // 重置最高点追踪器，准备迎接上坡
+            ir_max = ir_sample;   
+            red_max = red_sample;
         }
     }
 }
-
 /**
  * @brief  输入一个点，如果凑够了刷新周期，就算出最新心率
  * @param  new_sample: 从平滑滤波器出来的最新波形点

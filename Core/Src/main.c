@@ -36,7 +36,7 @@
 struct
 {
   uint32_t Head;
-  float Value[4];
+  float Value[5];
   uint32_t Tail;
 } DebugData = {0}; // uart data package
 /* Private define ------------------------------------------------------------*/
@@ -52,26 +52,20 @@ struct
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
-//uint16_t adc_buffer[BUFFER_SIZE];
-
 uint16_t red_buffer[BUFFER_SIZE];
 uint16_t ir_buffer[BUFFER_SIZE];
 uint16_t raw_adc;
 volatile uint8_t timer_10ms_flag = 0;
-
-//volatile uint16_t buffer_head = 0;
-//volatile uint16_t buffer_tail = 0;
-
 volatile uint16_t red_head = 0;
 volatile uint16_t red_tail = 0;
-
 volatile uint16_t ir_head = 0;
 volatile uint16_t ir_tail = 0;
-
 volatile uint8_t light_state = 0;
 int32_t current_bpm = 0;
+float current_spo2 = 0.f;
+/* USER CODE END PV */
+
+
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
@@ -187,23 +181,19 @@ int main(void)
         
         // 【医学常识】：红外光(IR)穿透皮肤更深，受肤色干扰小，波形最稳定。
         // 所以我们永远只用 IR 波形来“寻找波峰/波谷”和“算心率”！
-        Track_Pulse_Wave(ir_final, &is_peak, &is_valley, &current_bpm);
+        Track_Pulse_Wave_Dual(ir_final, red_final, &is_peak, &is_valley, &current_bpm, &current_spo2);
 
         if (HAL_UART_GetState(&huart2) == HAL_UART_STATE_READY)
         {
-          DebugData.Value[0] = ir_final;  // 观察通道：940nm红外波形
-          DebugData.Value[1] = red_final; // 观察通道：660nm红光波形
-
-          // 标记通道：跟着 IR 波形打针
-          if (is_peak == 1) {
-            DebugData.Value[2] = ir_final + 200.0f; 
-          } else if (is_valley == 1) {
-            DebugData.Value[2] = ir_final - 200.0f; 
-          } else {
-            DebugData.Value[2] = 0.0f; 
-          }
-
-          DebugData.Value[3] = (float)current_bpm;
+          DebugData.Value[0] = ir_final;    // 波形 1
+          DebugData.Value[1] = red_final;   // 波形 2
+          
+          // 标记针
+          if (is_valley == 1) DebugData.Value[2] = ir_final - 200.0f; 
+          else DebugData.Value[2] = 0.0f; 
+          
+          DebugData.Value[3] = (float)current_bpm;  // 通道 4：心率
+          DebugData.Value[4] = current_spo2;        // 通道 5：血氧 ！！！
 
           HAL_UART_Transmit_DMA(&huart2, (uint8_t *)&DebugData, sizeof(DebugData));
         }
