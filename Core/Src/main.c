@@ -200,9 +200,12 @@ int main(void)
             DebugData.Value[2] = 0.0f; // 平时跟随基准线
           }
 
-          DebugData.Value[3] = (float)current_bpm; // 通道4：心率
-          DebugData.Value[4] = current_spo2;       // 通道5：血氧
-          DebugData.Value[5] = current_r_value;
+          //DebugData.Value[3] = (float)current_bpm; // 通道4：心率
+          //DebugData.Value[4] = current_spo2;       // 通道5：血氧
+          //DebugData.Value[5] = current_r_value;
+          DebugData.Value[3] = ir_raw; // 通道4：红外原始数据
+          DebugData.Value[4] = red_raw;// 通道5：红光原始数据
+          DebugData.Value[5] = ir_state.dc_baseline;// 通道6：红外直流基线 (DC)
           HAL_UART_Transmit_DMA(&huart2, (uint8_t *)&DebugData, sizeof(DebugData));
         }
       }

@@ -1,95 +1,132 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# 1. 读取数据 (使用方案三解决乱码)
-file_path = "D:/DeskTop/Pulsewave_project/JComV1.2.0/LogData/signal1.csv" 
+# =================================================================
+# 1. 算法封装 (1:1 翻译你的 Algorithm.c)
+# =================================================================
+
+class PPG_Algorithm:
+    def __init__(self):
+        # 滤波器状态
+        self.ir_dc_baseline = 0.0
+        self.ir_ac_filtered = 0.0
+        self.red_dc_baseline = 0.0
+        self.red_ac_filtered = 0.0
+        self.is_filter_init = False
+
+        # Track_Pulse_Wave_Dual 状态机变量
+        self.ir_max = -9999.0
+        self.ir_min = 9999.0
+        self.red_max = -9999.0
+        self.red_min = 9999.0
+        self.state = 1
+        self.ir_amplitude = 100.0
+        self.last_peak_tick = 0
+        self.rise_value = 0.25
+        self.fall_value = 0.25
+
+    def IIR_Bandpass_Filter(self, ir_raw, red_raw):
+        if not self.is_filter_init:
+            self.ir_dc_baseline = ir_raw
+            self.red_dc_baseline = red_raw
+            self.is_filter_init = True
+            return 0.0, 0.0, ir_raw, red_raw
+
+        # 红外通道
+        self.ir_dc_baseline = 0.9876 * self.ir_dc_baseline + 0.0124 * ir_raw
+        ir_pure_ac = ir_raw - self.ir_dc_baseline
+        self.ir_ac_filtered = 0.7610 * self.ir_ac_filtered + 0.2390 * ir_pure_ac
+
+        # 红光通道
+        self.red_dc_baseline = 0.9876 * self.red_dc_baseline + 0.0124 * red_raw
+        red_pure_ac = red_raw - self.red_dc_baseline
+        self.red_ac_filtered = 0.7610 * self.red_ac_filtered + 0.2390 * red_pure_ac
+
+        return self.ir_ac_filtered, self.red_ac_filtered, self.ir_dc_baseline, self.red_dc_baseline
+
+    def Track_Pulse_Wave_Dual(self, ir_ac, red_ac, ir_dc, red_dc, current_tick):
+        is_peak = False
+        is_valley = False
+        
+        # 更新最大最小值
+        if ir_ac > self.ir_max: self.ir_max = ir_ac
+        if ir_ac < self.ir_min: self.ir_min = ir_ac
+        
+        if self.state == 1: # 寻找波峰
+            if (ir_ac < self.ir_max - self.ir_amplitude * self.fall_value) and (current_tick - self.last_peak_tick > 35):
+                is_peak = True
+                self.state = 0
+                self.ir_min = ir_ac
+                self.last_peak_tick = current_tick
+        else: # 寻找波谷
+            if (ir_ac > self.ir_min + self.ir_amplitude * self.rise_value) and (current_tick - self.last_peak_tick > 17):
+                is_valley = True
+                self.state = 1
+                self.ir_amplitude = self.ir_max - self.ir_min
+                # 限幅逻辑
+                if self.ir_amplitude < 20.0: self.ir_amplitude = 100.0
+                if self.ir_amplitude > 5000.0: self.ir_amplitude = 5000.0
+                self.ir_max = ir_ac
+                
+        return is_peak, is_valley
+
+# =================================================================
+# 2. 数据读取与处理
+# =================================================================
+
+file_path = "D:/DeskTop/Pulsewave_project/JComV1.2.0/LogData/signal4.csv"
 df = pd.read_csv(file_path, encoding_errors='ignore')
-df.columns = ['time', 'IR_AC', 'Red_AC', 'Marker', 'R_value']
+df.columns = ['time', 'MCU_IR_AC', 'MCU_Red_AC', 'Marker', 'IR_raw', 'Red_raw', 'MCU_IR_DC']
 
-# 2. 提取下位机 (MCU) 在线跑出来的结果（为了做 1:1 对齐验证）
-mcu_peaks = df[df['Marker'] > 1000].index.tolist()
-mcu_valleys = df[df['Marker'] < -1000].index.tolist()
+algo = PPG_Algorithm()
+py_results = []
 
-# 3. 准备离线运行 Python 版本的 C 算法
-ir_ac_data = df['IR_AC'].values
-red_ac_data = df['Red_AC'].values
-
-# 初始化状态机变量 (严格与 C 语言 static 变量一致)
-ir_max = -9999.0
-ir_min = 9999.0
-red_max = -9999.0
-red_min = 9999.0
-
-state = 1
-ir_amplitude = 100.0
-last_peak_tick = 0
-rise_value = 0.25
-fall_value = 0.25
-
-python_peaks = []
-python_valleys = []
-
-# 开始遍历数据，模拟单片机每 10ms 进来一个点的情况
-for time_tick in range(len(ir_ac_data)):
-    ir_ac = ir_ac_data[time_tick]
-    red_ac = red_ac_data[time_tick]
+for i in range(len(df)):
+    # 模拟单片机 10ms 的一次处理循环
+    ir_raw = df['IR_raw'].iloc[i]
+    red_raw = df['Red_raw'].iloc[i]
     
-    # C 语言里 time_tick 是在判断前 ++ 的，所以这里加 1
-    current_tick = time_tick + 1 
+    # 第一步：滤波
+    ir_ac, red_ac, ir_dc, red_dc = algo.IIR_Bandpass_Filter(ir_raw, red_raw)
     
-    if ir_ac > ir_max: ir_max = ir_ac
-    if ir_ac < ir_min: ir_min = ir_ac
-    if red_ac > red_max: red_max = red_ac
-    if red_ac < red_min: red_min = red_ac
+    # 第二步：波形追踪 (状态机)
+    is_peak, is_valley = algo.Track_Pulse_Wave_Dual(ir_ac, red_ac, ir_dc, red_dc, i + 1)
     
-    if state == 1:
-        # 波峰检测逻辑
-        if (ir_ac < ir_max - ir_amplitude * fall_value) and (current_tick - last_peak_tick > 35):
-            python_peaks.append(time_tick) # 记录 Python 算出的波峰索引
-            state = 0
-            
-            ir_min = ir_ac
-            red_min = red_ac
-            last_peak_tick = current_tick
-            
-    else:
-        # 波谷检测逻辑
-        if (ir_ac > ir_min + ir_amplitude * rise_value) and (current_tick - last_peak_tick > 17):
-            python_valleys.append(time_tick) # 记录 Python 算出的波谷索引
-            state = 1
-            
-            ir_ac_pp = ir_max - ir_min
-            red_ac_pp = red_max - red_min
-            
-            ir_amplitude = ir_ac_pp
-            
-            # 防崩溃限幅
-            if ir_amplitude < 20.0: ir_amplitude = 100.0
-            if ir_amplitude > 5000.0: ir_amplitude = 5000.0
-            
-            ir_max = ir_ac
-            red_max = red_ac
+    py_results.append({
+        'ir_ac': ir_ac,
+        'is_peak': is_peak,
+        'is_valley': is_valley
+    })
 
-# 4. 绘图对比
-fig, ax1 = plt.subplots(figsize=(15, 6))
+# 转化为 DataFrame 方便画图
+py_df = pd.DataFrame(py_results)
 
-# 绘制红外和红光的波形
-ax1.plot(df.index, df['IR_AC'], label='IR AC (940nm)', color='royalblue', alpha=0.8)
-ax1.plot(df.index, df['Red_AC'], label='Red AC (660nm)', color='crimson', alpha=0.5)
+# =================================================================
+# 3. 对齐验证绘图
+# =================================================================
 
-# 画出 MCU 原本的标记 (作为底层参照，使用大且半透明的灰色方块)
-ax1.scatter(mcu_peaks, df.loc[mcu_peaks, 'IR_AC'], color='gray', marker='s', s=180, alpha=0.6, label='MCU Online Peak')
-ax1.scatter(mcu_valleys, df.loc[mcu_valleys, 'IR_AC'], color='gray', marker='s', s=180, alpha=0.6, label='MCU Online Valley')
+plt.figure(figsize=(15, 6))
+# 绘制 Python 滤波后的 IR AC 波形
+plt.plot(df.index, py_df['ir_ac'], label='Python IR AC (Filtered)', color='royalblue', alpha=0.6)
 
-# 画出 Python 离线算法跑出来的标记 (使用亮色的三角形)
-ax1.scatter(python_peaks, df.loc[python_peaks, 'IR_AC'], color='lime', marker='^', s=100, label='Python Offline Peak', zorder=4, edgecolors='black')
-ax1.scatter(python_valleys, df.loc[python_valleys, 'IR_AC'], color='magenta', marker='v', s=100, label='Python Offline Valley', zorder=4, edgecolors='black')
+# --- 标记 Python 离线算出的峰谷 (实心亮色图形) ---
+py_peaks = py_df[py_df['is_peak']].index
+py_valleys = py_df[py_df['is_valley']].index
+plt.scatter(py_peaks, py_df.loc[py_peaks, 'ir_ac'], color='lime', marker='^', s=100, label='Python Peak', zorder=4, edgecolors='black')
+plt.scatter(py_valleys, py_df.loc[py_valleys, 'ir_ac'], color='magenta', marker='v', s=100, label='Python Valley', zorder=4, edgecolors='black')
 
-ax1.set_title('PPG Offline Algorithm Validation (Python vs MCU)')
-ax1.set_xlabel('Sample Index (10ms/point)')
-ax1.set_ylabel('Amplitude')
-ax1.legend(loc='upper right')
-ax1.grid(True, linestyle='--', alpha=0.6)
+# --- 标记 MCU 原始的打针标记 (空心大图形，作为底层参考) ---
+mcu_peaks = df[df['Marker'] > 1000].index
+mcu_valleys = df[df['Marker'] < -1000].index
+# MCU 波峰用空心黑圆圈
+plt.scatter(mcu_peaks, py_df.loc[mcu_peaks, 'ir_ac'], facecolors='none', edgecolors='black', s=180, linewidths=2, label='MCU Peak (Online)', zorder=3)
+# MCU 波谷用空心红方块
+plt.scatter(mcu_valleys, py_df.loc[mcu_valleys, 'ir_ac'], facecolors='none', edgecolors='red', marker='s', s=180, linewidths=2, label='MCU Valley (Online)', zorder=3)
 
+plt.title("Full Algorithm Alignment: Filter + State Machine")
+plt.xlabel("Sample Index (10ms/point)")
+plt.ylabel("Amplitude")
+plt.legend(loc='upper right')
+plt.grid(True, linestyle='--', alpha=0.6)
 plt.tight_layout()
 plt.show()
