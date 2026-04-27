@@ -22,8 +22,8 @@ class PPG_Algorithm:
         self.state = 1
         self.ir_amplitude = 100.0
         self.last_peak_tick = 0
-        self.rise_value = 0.25
-        self.fall_value = 0.25
+        self.rise_value = 0.30
+        self.fall_value = 0.30
 
     def IIR_Bandpass_Filter(self, ir_raw, red_raw):
         if not self.is_filter_init:
@@ -59,13 +59,15 @@ class PPG_Algorithm:
                 self.ir_min = ir_ac
                 self.last_peak_tick = current_tick
         else: # 寻找波谷
-            if (ir_ac > self.ir_min + self.ir_amplitude * self.rise_value) and (current_tick - self.last_peak_tick > 17):
+            if (ir_ac > self.ir_min + self.ir_amplitude * self.rise_value) and (current_tick - self.last_peak_tick > 25):
                 is_valley = True
                 self.state = 1
                 self.ir_amplitude = self.ir_max - self.ir_min
-                # 限幅逻辑
-                if self.ir_amplitude < 20.0: self.ir_amplitude = 100.0
-                if self.ir_amplitude > 5000.0: self.ir_amplitude = 5000.0
+                # 修改后：
+                if self.ir_amplitude < 300.0: 
+                    self.ir_amplitude = 800.0  # 恢复到一个比较典型的正常振幅，而不是极小值
+                if self.ir_amplitude > 5000.0: 
+                    self.ir_amplitude = 5000.0
                 self.ir_max = ir_ac
                 
         return is_peak, is_valley
