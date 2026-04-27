@@ -5,6 +5,12 @@ static int32_t ppg_buffer[PPG_BUFFER_SIZE];
 static uint16_t ppg_idx = 0;
 static uint8_t is_buffer_filled = 0; // 记录开机是否已经攒满过4秒
 
+static PPG_Filter_State ir_state = {0, 0, 0};
+static PPG_Filter_State red_state = {0, 0, 0};
+
+static float rise_value = 0.25f;//波谷检测
+static float fall_value = 0.25f;//波峰检测
+
 float Smooth_Filter_IR(float input_data)
 {
     static float window[FILTER_WINDOW_SIZE] = {0};
@@ -17,7 +23,8 @@ float Smooth_Filter_IR(float input_data)
     window[index] = input_data;
     index = (index + 1) % FILTER_WINDOW_SIZE;
 
-    if (count < FILTER_WINDOW_SIZE) {
+    if (count < FILTER_WINDOW_SIZE)
+    {
         count++;
         return sum / count;
     }
@@ -36,7 +43,8 @@ float Smooth_Filter_Red(float input_data)
     window[index] = input_data;
     index = (index + 1) % FILTER_WINDOW_SIZE;
 
-    if (count < FILTER_WINDOW_SIZE) {
+    if (count < FILTER_WINDOW_SIZE)
+    {
         count++;
         return sum / count;
     }
@@ -44,26 +52,26 @@ float Smooth_Filter_Red(float input_data)
 }
 
 /**
- * @brief  终极双光路状态机：同时计算心率 (BPM) 和血氧 (SpO2)
- * @param  ir_sample   最新输入的红外光平滑数据
- * @param  red_sample  最新输入的红光平滑数据
+ * @brief  升级版双光路状态机：利用 AC/DC 分离信号计算心率和血氧
+ * @param  ir_ac       红外光经过高通/低通后的交流分量 (围绕0波动)
+ * @param  red_ac      红光经过高通/低通后的交流分量 (围绕0波动)
+ * @param  ir_dc       红外光的实时直流基线 (由超低通滤波器提取)
+ * @param  red_dc      红光的实时直流基线 (由超低通滤波器提取)
  * @param  is_peak     输出：波峰标志
  * @param  is_valley   输出：波谷标志
- * @param  bpm         输出：实时心率
- * @param  spo2        输出：实时血氧饱和度 (百分比)
+ * @param  bpm         输出：实时心率 (BPM)
+ * @param  spo2        输出：实时血氧饱和度 (%)
  */
-void Track_Pulse_Wave_Dual(float ir_sample, float red_sample, uint8_t *is_peak, uint8_t *is_valley, int32_t *bpm, float *spo2)
+void Track_Pulse_Wave_Dual(float ir_ac, float red_ac, float ir_dc, float red_dc, 
+                           uint8_t *is_peak, uint8_t *is_valley, int32_t *bpm, float *spo2, float *out_r)
 {
-    // IR 光的极值追踪
-    static float ir_max = 0.0f;            
-    static float ir_min = 99999.0f;        
-    
-    // Red 光的极值追踪
-    static float red_max = 0.0f;
-    static float red_min = 99999.0f;
+    static float ir_max = -9999.0f;            
+    static float ir_min = 9999.0f;        
+    static float red_max = -9999.0f;
+    static float red_min = 9999.0f;
 
-    static uint8_t state = 1;             // 1: 寻找波峰, 0: 寻找波谷
-    static float ir_amplitude = 500.0f;   // IR 的动态幅值
+    static uint8_t state = 1;             
+    static float ir_amplitude = 100.0f;   
     static uint32_t time_tick = 0;        
     static uint32_t last_peak_tick = 0;   
 
@@ -71,82 +79,77 @@ void Track_Pulse_Wave_Dual(float ir_sample, float red_sample, uint8_t *is_peak, 
     *is_valley = 0;
     time_tick++;
 
-    // 实时追踪两条光路的最高点和最低点
-    if (ir_sample > ir_max) ir_max = ir_sample;
-    if (ir_sample < ir_min) ir_min = ir_sample;
-    
-    if (red_sample > red_max) red_max = red_sample;
-    if (red_sample < red_min) red_min = red_sample;
+    if (ir_ac > ir_max) ir_max = ir_ac;
+    if (ir_ac < ir_min) ir_min = ir_ac;
+    if (red_ac > red_max) red_max = red_ac;
+    if (red_ac < red_min) red_min = red_ac;
 
-    // =============== 寻找波峰状态 ===============
-    // 【规则】：永远以 IR 光为基准来判断波峰，因为 IR 穿透力强，波形最稳
     if (state == 1) 
     {
-        if ((ir_sample < ir_max - ir_amplitude * 0.2f) && ((time_tick - last_peak_tick) > 30)) 
+        if ((ir_ac < ir_max - ir_amplitude * fall_value) && (time_tick - last_peak_tick > 35)) 
         {
             *is_peak = 1;         
             state = 0;            
             
-            // 重置所有最低点追踪器，准备迎接下坡
-            ir_min = ir_sample;   
-            red_min = red_sample;
+            ir_min = ir_ac;   
+            red_min = red_ac;
 
-            // 计算 BPM
             if (last_peak_tick > 0) 
             {
                 uint32_t interval = time_tick - last_peak_tick; 
-                if (interval > 33 && interval < 150) 
+                // 确保 interval 不是 0 才会除
+                if (interval >= 33 && interval <= 150) 
                 {
-                    *bpm = (100 * 60) / interval; 
+                    *bpm = (PPG_SAMPLE_RATE * 60) / interval; 
                 }
             }
             last_peak_tick = time_tick;
         }
     }
-    // =============== 寻找波谷状态 (结算血氧的绝佳时机！) ===============
     else 
     {
-        if ((ir_sample > ir_min + ir_amplitude * 0.2f) && ((time_tick - last_peak_tick) > 15)) 
+        if ((ir_ac > ir_min + ir_amplitude * rise_value) && (time_tick - last_peak_tick > 17)) 
         {
             *is_valley = 1;       
             state = 1;            
             
-            // 1. 提取 IR 光的 AC 和 DC
-            float ir_ac = ir_max - ir_min;
-            float ir_dc = ir_min;
-            ir_amplitude = ir_ac; // 更新动态幅值供下一次判断使用
+            float ir_ac_pp = ir_max - ir_min;
+            float red_ac_pp = red_max - red_min;
+            
+            ir_amplitude = ir_ac_pp; 
 
-            // 2. 提取 Red 光的 AC 和 DC
-            float red_ac = red_max - red_min;
-            float red_dc = red_min;
-
-            // 3. 【核心计算】血氧 R 值和 SpO2%
-            if (ir_dc > 0 && red_dc > 0 && ir_ac > 0) // 防止除零异常
+            // ====================================================
+            // 绝地防崩溃校验：严格防止分母为0或极其微小的值导致溢出
+            // ====================================================
+            if (ir_dc > 10.0f && red_dc > 10.0f && ir_ac_pp > 1.0f) 
             {
-                // R = (AC_red / DC_red) / (AC_ir / DC_ir)
-                float R = (red_ac / red_dc) / (ir_ac / ir_dc);
+                float ir_ratio = ir_ac_pp / ir_dc;
+                float red_ratio = red_ac_pp / red_dc;
                 
-                // 使用美信开源库的二次拟合经验公式 (你之前发给我的代码里就是这个)
-                float current_spo2 = -45.06f * R * R + 30.354f * R + 94.845f;
-                
-                // 上下限硬约束
-                if (current_spo2 > 100.0f) current_spo2 = 100.0f;
-                if (current_spo2 < 50.0f) current_spo2 = 0.0f; // 算出来太低说明波形不准，直接置零
-                
-                *spo2 = current_spo2;
+                // 只有当分母(ir_ratio)有合理值时才进行除法计算
+                if (ir_ratio > 0.00001f) 
+                {
+                    float R = red_ratio / ir_ratio;
+                    *out_r = R;
+                    float current_spo2 = -45.06f * R * R + 30.354f * R + 94.845f;
+                    
+                    if (current_spo2 > 100.0f) current_spo2 = 100.0f;
+                    if (current_spo2 < 50.0f)  current_spo2 = 0.0f; 
+                    
+                    *spo2 = current_spo2;
+                }
             }
 
-            // 底线保护
-            if (ir_amplitude < 100.0f) ir_amplitude = 500.0f;   
-            if (ir_amplitude > 3000.0f) ir_amplitude = 3000.0f; 
+            if (ir_amplitude < 20.0f)  ir_amplitude = 100.0f;   
+            if (ir_amplitude > 5000.0f) ir_amplitude = 5000.0f; 
 
-            // 重置最高点追踪器，准备迎接上坡
-            ir_max = ir_sample;   
-            red_max = red_sample;
+            ir_max = ir_ac;   
+            red_max = red_ac;
         }
     }
 }
-/**
+
+/*
  * @brief  输入一个点，如果凑够了刷新周期，就算出最新心率
  * @param  new_sample: 从平滑滤波器出来的最新波形点
  * @param  bpm: 用来保存计算结果的指针
@@ -247,4 +250,32 @@ uint8_t Get_Heart_Rate(float new_sample, int32_t *bpm)
     }
 
     return 0;
+}
+
+/**
+ * @brief AC/DC 分离式带通滤波器
+ * @param input_data 最新采集的一个ADC点
+ * @param state      保存当前通道滤波状态的结构体指针
+ */
+void IIR_Bandpass_Filter(float input_data, PPG_Filter_State *state)
+{
+    // 冷启动初始化，防止基线从0开始缓慢爬升
+    if (state->is_init == 0)
+    {
+        state->dc_baseline = input_data;
+        state->ac_filtered = 0.0f;
+        state->is_init = 1;
+        return;
+    }
+
+    // 1. 提取极低频基线 (DC) - 截止频率约 0.2Hz
+    // 权重 0.0124 对应 100Hz 采样率下的极慢速跟随
+    state->dc_baseline = 0.9876f * state->dc_baseline + 0.0124f * input_data;
+
+    // 2. 扣除基线，得到初步的纯交流波 (高通效果)
+    float pure_ac = input_data - state->dc_baseline;
+
+    // 3. 对交流波进行低通滤波 - 截止频率约 5Hz，去除高频毛刺
+    // 权重 0.239 对应 100Hz 采样率下的平滑
+    state->ac_filtered = 0.7610f * state->ac_filtered + 0.2390f * pure_ac;
 }
