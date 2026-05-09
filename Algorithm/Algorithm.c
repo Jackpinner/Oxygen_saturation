@@ -108,7 +108,7 @@ void Track_Pulse_Wave_Dual(float ir_ac, float red_ac, float ir_dc, float red_dc,
     }
     else 
     {
-        if ((ir_ac > ir_min + ir_amplitude * rise_value) && (time_tick - last_peak_tick > 17)) 
+        if ((ir_ac > ir_min + ir_amplitude * rise_value) && (time_tick - last_peak_tick > 40)) 
         {
             *is_valley = 1;       
             state = 1;            
@@ -131,7 +131,7 @@ void Track_Pulse_Wave_Dual(float ir_ac, float red_ac, float ir_dc, float red_dc,
                 {
                     float R = red_ratio / ir_ratio;
                     *out_r = R;
-                    float current_spo2 = -45.06f * R * R + 30.354f * R + 94.845f;
+                    float current_spo2 = -42369.8085f * R * R + 75929.1431f * R + -33921.0470f;
                     
                     if (current_spo2 > 100.0f) current_spo2 = 100.0f;
                     if (current_spo2 < 50.0f)  current_spo2 = 0.0f; 
