@@ -185,8 +185,10 @@ int main(void)
         //==========================================
         if (HAL_UART_GetState(&huart2) == HAL_UART_STATE_READY)
         {
-          DebugData.Value[0] = ir_state.ac_filtered;  // 通道1：纯净的红外交流波形
-          DebugData.Value[1] = red_state.ac_filtered; // 通道2：纯净的红光交流波形
+          // DebugData.Value[0] = ir_state.ac_filtered;  // 通道1：纯净的红外交流波形
+          // DebugData.Value[1] = red_state.ac_filtered; // 通道2：纯净的红光交流波形
+          DebugData.Value[0] = ir_raw;; // 通道1：660LED原始数据
+          DebugData.Value[1] = red_raw;// 通道2：660VCSEL原始数据
 
           latest_ir_index = (ir_head == 0) ? (BUFFER_SIZE - 1) : (ir_head - 1);
           latest_red_index = (red_head == 0) ? (BUFFER_SIZE - 1) : (red_head - 1);
@@ -204,14 +206,14 @@ int main(void)
             DebugData.Value[2] = 0.0f; // 平时跟随基准线
           }
 
-          //DebugData.Value[3] = (float)current_bpm; // 通道4：心率
-          //DebugData.Value[4] = current_spo2;       // 通道5：血氧
-          //DebugData.Value[3] = ir_raw; // 通道4：红外原始数据
-          //DebugData.Value[4] = red_raw;// 通道5：红光原始数据
-          DebugData.Value[3] = (float)ir_buffer[latest_ir_index];; // 通道4：红外adc原始数据
-          DebugData.Value[4] = (float)red_buffer[latest_red_index];// 通道5：红光adc原始数据
-          //DebugData.Value[5] = current_r_value;
-          DebugData.Value[5] = ir_state.dc_baseline;// 通道6：红外直流基线 (DC)
+          DebugData.Value[3] = (float)current_bpm; // 通道4：心率
+          DebugData.Value[4] = current_spo2;       // 通道5：血氧
+          // DebugData.Value[3] = ir_raw; // 通道4：红外原始数据
+          // DebugData.Value[4] = red_raw;// 通道5：红光原始数据
+          // DebugData.Value[3] = (float)ir_buffer[latest_ir_index];; // 通道4：红外adc原始数据
+          // DebugData.Value[4] = (float)red_buffer[latest_red_index];// 通道5：红光adc原始数据
+          DebugData.Value[5] = current_r_value;
+          // DebugData.Value[5] = ir_state.dc_baseline;// 通道6：红外直流基线 (DC)
           HAL_UART_Transmit_DMA(&huart2, (uint8_t *)&DebugData, sizeof(DebugData));
         }
       }

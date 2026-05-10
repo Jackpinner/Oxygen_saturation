@@ -1,0 +1,117 @@
+% =========================================================
+% Fig 4(c): 单路最优工况下 LED 与 VCSEL 信噪比(SNR)对比图
+% 核心逻辑：分别读取 -> 独立滑动窗口 -> 无工具箱 T 检验 -> 画图
+% =========================================================
+clc; clear; close all;
+
+%% 1. 数据读取与预处理
+% 填入你保存的单路原始数据文件名 (根据实际情况修改 .csv 或 .xlsx)
+filepath_led = 'D:\DeskTop\Pulsewave_project\JComV1.2.0\LogData\VC.csv';
+filepath_vcsel = 'D:\DeskTop\Pulsewave_project\JComV1.2.0\LogData\VCSEL1.csv';
+
+data_led = readtable(filepath_led);
+data_vcsel = readtable(filepath_vcsel);
+
+% 提取第 2 列数据 (即你的 average_val 纯净降采样数据)
+led_raw = data_led{:, 2};
+vcsel_raw = data_vcsel{:, 2};
+
+fs = 100; % 采样频率 100Hz
+
+%% 2. 频域 SNR 计算 (支持两段数据长度不一致)
+window_sec = 4;   % 4秒一个统计窗口
+overlap_sec = 2;  % 2秒重叠 (增加统计样本量)
+samples_per_win = window_sec * fs;
+step_samples = (window_sec - overlap_sec) * fs;
+
+% 定义严谨的频段标准
+freq_total = [0.1, 8];    % 总考察频段
+freq_signal = [0.8, 2.5]; % 核心心跳频段
+
+fprintf('========== 正在独立计算两路信号 SNR ==========\n');
+
+% --- 处理 LED 数据 ---
+num_win_led = floor((length(led_raw) - samples_per_win) / step_samples) + 1;
+snr_led_list = zeros(num_win_led, 1);
+for i = 1:num_win_led
+    idx = (i-1)*step_samples + 1 : (i-1)*step_samples + samples_per_win;
+    seg = led_raw(idx);
+    seg = seg - mean(seg); % 去基线
+    p_tot = bandpower(seg, fs, freq_total);
+    p_sig = bandpower(seg, fs, freq_signal);
+    p_noi = p_tot - p_sig;
+    if p_noi <= 0, p_noi = eps; end
+    snr_led_list(i) = 10 * log10(p_sig / p_noi);
+end
+
+% --- 处理 VCSEL 数据 ---
+num_win_vcsel = floor((length(vcsel_raw) - samples_per_win) / step_samples) + 1;
+snr_vcsel_list = zeros(num_win_vcsel, 1);
+for i = 1:num_win_vcsel
+    idx = (i-1)*step_samples + 1 : (i-1)*step_samples + samples_per_win;
+    seg = vcsel_raw(idx);
+    seg = seg - mean(seg); % 去基线
+    p_tot = bandpower(seg, fs, freq_total);
+    p_sig = bandpower(seg, fs, freq_signal);
+    p_noi = p_tot - p_sig;
+    if p_noi <= 0, p_noi = eps; end
+    snr_vcsel_list(i) = 10 * log10(p_sig / p_noi);
+end
+
+%% 3. 统计学检验 (手写独立样本 T 检验)
+n1 = length(snr_vcsel_list);
+n2 = length(snr_led_list);
+mean_vcsel = mean(snr_vcsel_list);
+mean_led = mean(snr_led_list);
+var_vcsel = var(snr_vcsel_list);
+var_led = var(snr_led_list);
+
+% 计算合并标准差与 T 统计量
+sp = sqrt( ((n1-1)*var_vcsel + (n2-1)*var_led) / (n1+n2-2) );
+t_stat = (mean_vcsel - mean_led) / (sp * sqrt(1/n1 + 1/n2));
+df = n1 + n2 - 2;
+
+% 计算 P 值 (使用不完全贝塔函数平替统计工具箱)
+x_beta = df / (df + t_stat^2);
+p_value = betainc(x_beta, df/2, 0.5);
+
+fprintf('LED 平均 SNR: %.2f dB\n', mean_led);
+fprintf('VCSEL 平均 SNR: %.2f dB\n', mean_vcsel);
+fprintf('T 检验 P 值: %.2e\n', p_value);
+fprintf('==============================================\n');
+
+%% 4. 绘制高质感箱型图 (Fig 4c)
+figure('Name', 'Fig 4(c): SNR Boxplot (Single Channel)', 'Position', [300, 200, 450, 550]);
+hold on;
+
+% 分开绘制以自适应不同的数据长度，并赋予对应学术颜色
+b1 = boxchart(ones(n2,1), snr_led_list, 'BoxFaceColor', [0.4940, 0.1840, 0.5560], ...
+    'MarkerStyle', 'o', 'LineWidth', 1.5, 'MarkerColor', [0.4940, 0.1840, 0.5560]);
+b2 = boxchart(2*ones(n1,1), snr_vcsel_list, 'BoxFaceColor', [0.6350, 0.0780, 0.1840], ...
+    'MarkerStyle', 'o', 'LineWidth', 1.5, 'MarkerColor', [0.6350, 0.0780, 0.1840]);
+
+title('Signal-to-Noise Ratio Comparison', 'FontSize', 15, 'FontWeight', 'bold');
+ylabel('SNR (dB)', 'FontSize', 13, 'FontWeight', 'bold');
+xticks([1, 2]); 
+xticklabels({'660nm LED', '660nm VCSEL'});
+grid on; 
+set(gca, 'FontSize', 12, 'LineWidth', 1.2, 'Box', 'on', 'GridLineStyle', '--');
+
+% --- 添加显著性检验连线与星号 ---
+y_max_plot = max([max(snr_led_list), max(snr_vcsel_list)]) + 2; 
+y_min_plot = min([min(snr_led_list), min(snr_vcsel_list)]) - 2;
+ylim([y_min_plot, y_max_plot + 4]); 
+
+% 画连接横线
+plot([1, 1, 2, 2], [y_max_plot-0.5, y_max_plot, y_max_plot, y_max_plot-0.5], '-k', 'LineWidth', 1.2);
+
+% 根据 P 值打星号
+if p_value < 0.001
+    text(1.5, y_max_plot + 0.5, '***', 'FontSize', 20, 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
+elseif p_value < 0.01
+    text(1.5, y_max_plot + 0.5, '**', 'FontSize', 20, 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
+elseif p_value < 0.05
+    text(1.5, y_max_plot + 0.5, '*', 'FontSize', 20, 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
+else
+    text(1.5, y_max_plot + 0.5, 'ns', 'FontSize', 12, 'HorizontalAlignment', 'center');
+end

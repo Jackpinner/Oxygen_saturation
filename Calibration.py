@@ -21,10 +21,10 @@ df_valid['R_smooth'] = df_valid['R/IR_baseline'].rolling(window=200, center=True
 # 5. 解决时间延迟 (核心逻辑)
 # 通过交叉相关性计算，你的商业设备大约有 5.76秒(576个点) 的延迟
 # 我们将商业 SpO2 数据"向上/向左"移动 576 行，以对齐真正发生生理变化的 R 值
-DELAY_SAMPLES = 600 
+DELAY_SAMPLES = 650 
 df_valid['Spo2_aligned'] = df_valid['Spo2_filled'].shift(-DELAY_SAMPLES)
 
-# 丢弃因为位移产生空缺(NaN)的行
+# 丢弃因为位移产生空缺(NaN)的行8
 df_fit = df_valid.dropna(subset=['Spo2_aligned', 'R_smooth']).copy()
 
 # 6. 二次多项式拟合: SpO2 = A * R^2 + B * R + C
